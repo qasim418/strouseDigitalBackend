@@ -35,6 +35,11 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 
+// make a dummy route
+app.get('/', (req, res) => {
+  res.send('Hello World!');
+});
+
 // Middleware to verify token and extract user ID
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];

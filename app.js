@@ -100,36 +100,47 @@ app.get('/api/messages', authenticateToken, (req, res) => {
 // Update or insert message by user ID
 app.put('/api/messages', authenticateToken, (req, res) => {
   const userId = req.user.id;
-  const { message } = req.body;
+  const { message, url } = req.body; // Include 'url' in the request body
 
-  // Check if a message already exists for this user
-  const checkQuery = 'SELECT * FROM messages WHERE user_id = ?';
-  db.query(checkQuery, [userId], (err, results) => {
+  // Update the URL in the users table
+  // print user id and url
+  console.log(userId, url);
+  const updateUserUrlQuery = 'UPDATE users SET link = ? WHERE id = ?';
+  db.query(updateUserUrlQuery, [url, userId], (err, result) => {
     if (err) {
-      return res.status(500).json({ message: 'Database error' });
+      return res.status(500).json({ message: 'Database error updating URL' });
     }
 
-    if (results.length === 0) {
-      // Insert a new message
-      const insertQuery = 'INSERT INTO messages (user_id, message) VALUES (?, ?)';
-      db.query(insertQuery, [userId, message], (err, results) => {
-        if (err) {
-          return res.status(500).json({ message: 'Database error' });
-        }
-        res.json({ message: 'Message inserted successfully!' });
-      });
-    } else {
-      // Update existing message
-      const updateQuery = 'UPDATE messages SET message = ? WHERE user_id = ?';
-      db.query(updateQuery, [message, userId], (err, results) => {
-        if (err) {
-          return res.status(500).json({ message: 'Database error' });
-        }
-        res.json({ message: 'Message updated successfully!' });
-      });
-    }
+    // Check if a message already exists for this user
+    const checkQuery = 'SELECT * FROM messages WHERE user_id = ?';
+    db.query(checkQuery, [userId], (err, results) => {
+      if (err) {
+        return res.status(500).json({ message: 'Database error' });
+      }
+
+      if (results.length === 0) {
+        // Insert a new message
+        const insertQuery = 'INSERT INTO messages (user_id, message) VALUES (?, ?)';
+        db.query(insertQuery, [userId, message], (err, results) => {
+          if (err) {
+            return res.status(500).json({ message: 'Database error' });
+          }
+          res.json({ message: 'Message inserted successfully!' });
+        });
+      } else {
+        // Update existing message
+        const updateQuery = 'UPDATE messages SET message = ? WHERE user_id = ?';
+        db.query(updateQuery, [message, userId], (err, results) => {
+          if (err) {
+            return res.status(500).json({ message: 'Database error' });
+          }
+          res.json({ message: 'Message and URL updated successfully!' });
+        });
+      }
+    });
   });
 });
+
 
 // Placeholder endpoint for sending messages (this can be implemented as needed)
 // app.post('/api/send-message', authenticateToken, (req, res) => {
@@ -327,19 +338,44 @@ app.get('/api/admin/users', authenticateAdminToken, (req, res) => {
   });
 });
 
-// Delete user endpoint
-app.delete('/api/admin/users/:id', authenticateAdminToken, (req, res) => {
+// Delete a user
+// Delete a user
+app.delete('/api/admin/users/:id', authenticateToken, (req, res) => {
   const userId = req.params.id;
-  const query = 'DELETE FROM users WHERE id = ?';
-  db.query(query, [userId], (err, results) => {
-    if (err) return res.status(500).json({ message: 'Database error' });
+  const deleteQuery = 'DELETE FROM users WHERE id = ?';
+
+  db.query(deleteQuery, [userId], (err, results) => {
+    if (err) {
+      console.error('Database error:', err); // Print detailed error to console
+      return res.status(500).json({ message: 'Database error', error: err.message }); // Send error details in response
+    }
+
     if (results.affectedRows === 0) {
+      console.log('User not found:', userId); // Log the case where no user is found
       return res.status(404).json({ message: 'User not found' });
     }
+
+    console.log('User deleted successfully:', userId); // Log successful deletion
     res.json({ message: 'User deleted successfully' });
   });
 });
 
+// Update a user
+app.put('/api/admin/users/:id', authenticateToken, (req, res) => {
+  const userId = req.params.id;
+  const { username, password, company_name, link } = req.body;
+
+  const updateQuery = `
+    UPDATE users
+    SET username = ?, password = ?, company_name = ?, link = ?
+    WHERE id = ?
+  `;
+  db.query(updateQuery, [username, password, company_name, link, userId], (err, results) => {
+    if (err) return res.status(500).json({ message: 'Database error' });
+    if (results.affectedRows === 0) return res.status(404).json({ message: 'User not found' });
+    res.json({ message: 'User updated successfully' });
+  });
+});
 
 
 // Add user endpoint

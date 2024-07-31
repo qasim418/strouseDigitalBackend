@@ -401,10 +401,12 @@ app.post('/api/reviews', authenticateAdminToken, (req, res) => {
 });
 
 // Get all reviews for admin
-app.get('/api/reviews', authenticateAdminToken, (req, res) => {
+app.get('/api/admin/reviews', authenticateAdminToken, (req, res) => {
   const query = 'SELECT * FROM user_reviews';
+  console.log('Get all reviews for admin');
   db.query(query, (err, results) => {
     if (err) return res.status(500).json({ message: 'Database error' });
+    console.log('Results:', results);
     res.json(results);
   });
 });
@@ -426,7 +428,7 @@ app.put('/api/notifications/:id/read', authenticateToken, (req, res) => {
 
   console.log(`Marking notification ${id} as read for user ${userId}`);
 
-  const query = 'UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?';
+  const query = 'UPDATE notifications SET is_read = 1 WHERE id = ? ';
   db.query(query, [id, userId], (err, results) => {
     if (err) {
       console.error('Database error:', err);
@@ -439,6 +441,19 @@ app.put('/api/notifications/:id/read', authenticateToken, (req, res) => {
   });
 });
 
+
+// Get images by user ID
+app.get('/api/admin/images', authenticateToken, (req, res) => {
+  // get user id by req.user.id
+  const userId = req.query.userId;
+  const query = 'SELECT * FROM user_images WHERE user_id = ?';
+  db.query(query, [userId], (err, results) => {
+    if (err) {
+      return res.status(500).json({ message: 'Database error' });
+    }
+    res.json(results);
+  });
+});
 
 // Admin password change endpoint
 app.post('/api/admin/update-password', authenticateToken, (req, res) => {

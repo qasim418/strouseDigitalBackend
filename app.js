@@ -65,23 +65,35 @@ app.post('/api/login', (req, res) => {
     }
 
     const user = results[0];
-    const token = jwt.sign({ id: user.id, username: user.username }, secretKey, { expiresIn: '1h' });
+    // const token = jwt.sign({ id: user.id, username: user.username }, secretKey, { expiresIn: '1h' });
+    const token = jwt.sign({ id: user.id, username: user.username }, secretKey);
+
     res.json({ token });
   });
 });
 
-// Get message by user ID
+// Get message and user details by user ID
 app.get('/api/messages', authenticateToken, (req, res) => {
   const userId = req.user.id;
-  const query = 'SELECT * FROM messages WHERE user_id = ?';
-  db.query(query, [userId], (err, results) => {
+
+  const messageQuery = 'SELECT * FROM messages WHERE user_id = ?';
+  db.query(messageQuery, [userId], (err, messageResults) => {
     if (err) {
       return res.status(500).json({ message: 'Database error' });
     }
-    if (results.length === 0) {
-      return res.json({ message: '' });
-    }
-    res.json(results[0]);
+
+    const message = messageResults.length > 0 ? messageResults[0].message : '';
+
+    const userQuery = 'SELECT company_name, link FROM users WHERE id = ?';
+    db.query(userQuery, [userId], (err, userResults) => {
+      if (err) {
+        return res.status(500).json({ message: 'Database error' });
+      }
+
+      const { company_name: companyName, link } = userResults[0] || {};
+
+      res.json({ message, companyName, link });
+    });
   });
 });
 
@@ -307,7 +319,8 @@ app.get('/api/admin/dashboard', authenticateAdminToken, (req, res) => {
 
 // Fetch all users endpoint
 app.get('/api/admin/users', authenticateAdminToken, (req, res) => {
-  const query = 'SELECT id, username, password, company_name FROM users';
+  const query = 'SELECT id, username, password, company_name, link FROM users';
+
   db.query(query, (err, results) => {
     if (err) return res.status(500).json({ message: 'Database error' });
     res.json(results);
@@ -331,9 +344,9 @@ app.delete('/api/admin/users/:id', authenticateAdminToken, (req, res) => {
 
 // Add user endpoint
 app.post('/api/admin/users', authenticateAdminToken, (req, res) => {
-  const { username, password, companyName } = req.body;
-  const query = 'INSERT INTO users (username, password, company_name) VALUES (?, ?, ?)';
-  db.query(query, [username, password, companyName], (err, results) => {
+  const { username, password, companyName, url } = req.body; // Destructure the URL from the request body
+  const query = 'INSERT INTO users (username, password, company_name, link) VALUES (?, ?, ?, ?)'; // Include URL in the query
+  db.query(query, [username, password, companyName, url], (err, results) => { // Include URL in the parameters
     if (err) return res.status(500).json({ message: 'Database error' });
     res.json({ message: 'User added successfully', userId: results.insertId });
   });
@@ -390,6 +403,18 @@ app.put('/api/notifications/:id/read', authenticateToken, (req, res) => {
   });
 });
 
+
+// Admin password change endpoint
+app.post('/api/admin/update-password', authenticateToken, (req, res) => {
+  const { password } = req.body;
+  const userId = req.user.id; // Extracted from JWT token by authenticateAdminToken middleware
+
+  const query = 'UPDATE admins SET password = ? WHERE id = ?';
+  db.query(query, [password, userId], (err, results) => {
+    if (err) return res.status(500).json({ message: 'Database error' });
+    res.json({ message: 'Password updated successfully' });
+  });
+});
 
 
 app.listen(PORT, () => {

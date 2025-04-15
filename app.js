@@ -16,23 +16,25 @@ const secretKey = process.env.JWT_SECRET; // Use secret key from environment var
 
 app.use(cors());
 app.use(bodyParser.json());
-app.use('/images', express.static(path.join(__dirname, 'images')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Multer setup for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = './images';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir);
-    }
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${req.user.id}-${Date.now()}-${file.originalname}`);
-  }
-});
+// app.use('/images', express.static(path.join(__dirname, 'images')));
 
-const upload = multer({ storage });
+// // Multer setup for file uploads
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     const dir = './images';
+//     if (!fs.existsSync(dir)) {
+//       fs.mkdirSync(dir);
+//     }
+//     cb(null, dir);
+//   },
+//   filename: (req, file, cb) => {
+//     cb(null, `${req.user.id}-${Date.now()}-${file.originalname}`);
+//   }
+// });
+
+// const upload = multer({ storage });
 
 
 // make a dummy route
@@ -72,30 +74,46 @@ app.post('/api/login', (req, res) => {
   });
 });
 
+
 // Get message and user details by user ID
 app.get('/api/messages', authenticateToken, (req, res) => {
-  const userId = req.user.id;
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: 'Unauthorized - User ID missing' });
+  }
 
   const messageQuery = 'SELECT * FROM messages WHERE user_id = ?';
+
   db.query(messageQuery, [userId], (err, messageResults) => {
     if (err) {
-      return res.status(500).json({ message: 'Database error' });
+      return res.status(500).json({ message: 'Database error on message retrieval' });
     }
 
     const message = messageResults.length > 0 ? messageResults[0].message : '';
 
-    const userQuery = 'SELECT company_name, link FROM users WHERE id = ?';
+    const userQuery = 'SELECT company_name, link, logo_link FROM users WHERE id = ?';
+
     db.query(userQuery, [userId], (err, userResults) => {
       if (err) {
-        return res.status(500).json({ message: 'Database error' });
+        return res.status(500).json({ message: 'Database error on user retrieval' });
       }
 
-      const { company_name: companyName, link } = userResults[0] || {};
+      if (!userResults || userResults.length === 0) {
+        return res.status(404).json({ message: 'User not found' });
+      }
 
-      res.json({ message, companyName, link });
+      const user = userResults[0];
+      const companyName = user.company_name;
+      const link = user.link;
+      const image = user.logo_link;
+
+      res.json({ message, companyName, link, image });
     });
   });
 });
+
+
 
 // Update or insert message by user ID
 app.put('/api/messages', authenticateToken, (req, res) => {
@@ -207,18 +225,7 @@ app.put('/api/messages', authenticateToken, (req, res) => {
 //   });
 // });
 
-// Upload image endpoint
-app.post('/api/upload', authenticateToken, upload.single('image'), (req, res) => {
-  const imageUrl = `/images/${req.file.filename}`;
-  const userId = req.user.id;
 
-  const query = 'INSERT INTO user_images (user_id, image_url) VALUES (?, ?)';
-  db.query(query, [userId, imageUrl], (err, results) => {
-    if (err) return res.status(500).json({ message: 'Database error' });
-
-    res.json({ message: 'Image uploaded successfully!', imageUrl });
-  });
-});
 
 // Get images by user ID
 app.get('/api/images', authenticateToken, (req, res) => {
@@ -231,6 +238,26 @@ app.get('/api/images', authenticateToken, (req, res) => {
     res.json(results);
   });
 });
+
+// Get photo_library_link for the authenticated user
+app.get('/api/user/photo-library', authenticateToken, (req, res) => {
+  const userId = req.user.id; // Get user ID from authenticated token
+
+  const query = 'SELECT photo_library_link FROM users WHERE id = ?';
+  db.query(query, [userId], (err, results) => {
+    if (err) {
+      return res.status(500).json({ message: 'Database error' });
+    }
+
+    if (!results || results.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const photoLibraryLink = results[0].photo_library_link;
+    res.json({ photoLibraryLink });
+  });
+});
+
 
 
 // Delete image endpoint
@@ -291,6 +318,46 @@ app.put('/api/reviews/:reviewId/response', authenticateToken, (req, res) => {
 });
 
 
+// GET /api/link — returns the link from users table for the logged-in user
+app.get('/api/link', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const query = 'SELECT link FROM users WHERE id = ?';
+
+  db.query(query, [userId], (err, result) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ message: 'Database error' });
+    }
+
+    // Check if the link exists for the user
+    if (result.length === 0 || !result[0].link) {
+      return res.status(404).json({ message: 'Link not found for user' });
+    }
+
+    res.json({ link: result[0].link });
+  });
+});
+
+
+// API to get Calendly link for authenticated user
+app.get('/api/calendly-link', authenticateToken, (req, res) => {
+  // Query to get the Calendly link from the admin_calendly_link table
+  const query = 'SELECT calendly_link FROM admin_calendly_link LIMIT 1';  // Assuming there's only one record
+  
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ message: 'Database error' });
+    }
+
+
+    if (results.length === 0 || !results[0].calendly_link) {
+      return res.status(404).json({ message: 'Calendly link not found' });
+    }
+
+    res.json({ calendlyLink: results[0].calendly_link });
+  });
+});
 
 // Admin Side
 // Middleware to verify admin token
@@ -305,6 +372,28 @@ const authenticateAdminToken = (req, res, next) => {
     next();
   });
 };
+
+
+// Create upload directory if not exists
+const uploadDir = './uploads/';
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir); // Save in ./uploads/
+  },
+  filename: function (req, file, cb) {
+    if (!req.admin || !req.admin.id) {
+      return cb(new Error('Admin ID not found in request'));
+    }
+    const uniqueName = `${req.admin.id}-${Date.now()}-${file.originalname}`;
+    cb(null, uniqueName);
+  },
+});
+
+const upload = multer({ storage });
 
 // Admin login endpoint
 app.post('/api/admin/login', (req, res) => {
@@ -330,7 +419,7 @@ app.get('/api/admin/dashboard', authenticateAdminToken, (req, res) => {
 
 // Fetch all users endpoint
 app.get('/api/admin/users', authenticateAdminToken, (req, res) => {
-  const query = 'SELECT id, username, password, company_name, link FROM users';
+  const query = 'SELECT id, username, password, company_name, link, photo_library_link, logo_link FROM users';
 
   db.query(query, (err, results) => {
     if (err) return res.status(500).json({ message: 'Database error' });
@@ -339,8 +428,7 @@ app.get('/api/admin/users', authenticateAdminToken, (req, res) => {
 });
 
 // Delete a user
-// Delete a user
-app.delete('/api/admin/users/:id', authenticateToken, (req, res) => {
+app.delete('/api/admin/users/:id', authenticateAdminToken, (req, res) => {
   const userId = req.params.id;
   const deleteQuery = 'DELETE FROM users WHERE id = ?';
 
@@ -360,31 +448,139 @@ app.delete('/api/admin/users/:id', authenticateToken, (req, res) => {
   });
 });
 
-// Update a user
-app.put('/api/admin/users/:id', authenticateToken, (req, res) => {
+// // Update a user
+// app.put('/api/admin/users/:id', authenticateToken, (req, res) => {
+//   const userId = req.params.id;
+//   const { username, password, company_name, link } = req.body;
+
+//   const updateQuery = `
+//     UPDATE users
+//     SET username = ?, password = ?, company_name = ?, link = ?
+//     WHERE id = ?
+//   `;
+//   db.query(updateQuery, [username, password, company_name, link, userId], (err, results) => {
+//     if (err) return res.status(500).json({ message: 'Database error' });
+//     if (results.affectedRows === 0) return res.status(404).json({ message: 'User not found' });
+//     res.json({ message: 'User updated successfully' });
+//   });
+// });
+
+// app.put('/api/admin/users/:id', authenticateAdminToken, upload.single('logo'), (req, res) => {
+//   const userId = req.params.id;
+//   const { username, password, company_name, link } = req.body;
+//   let updateFields = [];
+//   let updateValues = [];
+
+//   // Always update these fields
+//   updateFields.push('username = ?', 'password = ?', 'company_name = ?', 'link = ?');
+//   updateValues.push(username, password, company_name, link);
+
+//   // Check if image is uploaded
+//   if (req.file) {
+//     const imagePath = `/uploads/${req.file.filename}`;
+//     updateFields.push('logo_link = ?');
+//     updateValues.push(imagePath);
+//   }
+
+//   updateValues.push(userId); // for WHERE clause
+
+//   const updateQuery = `
+//     UPDATE users
+//     SET ${updateFields.join(', ')}
+//     WHERE id = ?
+//   `;
+
+//   db.query(updateQuery, updateValues, (err, results) => {
+//     if (err) return res.status(500).json({ message: 'Database error', error: err });
+//     if (results.affectedRows === 0) return res.status(404).json({ message: 'User not found' });
+//     res.json({ message: 'User updated successfully' });
+//   });
+// });
+
+app.put('/api/admin/users/:id', authenticateAdminToken, upload.single('logo'), (req, res) => {
   const userId = req.params.id;
-  const { username, password, company_name, link } = req.body;
+  const { username, password, company_name, link, photo_library_link } = req.body;
+  const file = req.file;
+
+  let updateFields = ['username = ?', 'password = ?', 'company_name = ?', 'link = ?', 'photo_library_link = ?'];
+  let updateValues = [username, password, company_name, link, photo_library_link];
+
+  // Full logo URL
+  const photoUrl = file ? `${req.protocol}://${req.get('host')}/uploads/${file.filename}` : null;
+  if (photoUrl) {
+    updateFields.push('logo_link = ?');
+    updateValues.push(photoUrl);
+  }
+
+  updateValues.push(userId);
 
   const updateQuery = `
     UPDATE users
-    SET username = ?, password = ?, company_name = ?, link = ?
+    SET ${updateFields.join(', ')}
     WHERE id = ?
   `;
-  db.query(updateQuery, [username, password, company_name, link, userId], (err, results) => {
-    if (err) return res.status(500).json({ message: 'Database error' });
+
+  db.query(updateQuery, updateValues, (err, results) => {
+    if (err) return res.status(500).json({ message: 'Database error', error: err });
     if (results.affectedRows === 0) return res.status(404).json({ message: 'User not found' });
-    res.json({ message: 'User updated successfully' });
+
+    // Optional: return updated user
+    db.query('SELECT * FROM users WHERE id = ?', [userId], (err2, rows) => {
+      if (err2) return res.status(500).json({ message: 'Failed to fetch updated user', error: err2 });
+      res.json({ message: 'User updated successfully', user: rows[0] });
+    });
   });
 });
 
 
 // Add user endpoint
-app.post('/api/admin/users', authenticateAdminToken, (req, res) => {
-  const { username, password, companyName, url } = req.body; // Destructure the URL from the request body
-  const query = 'INSERT INTO users (username, password, company_name, link) VALUES (?, ?, ?, ?)'; // Include URL in the query
-  db.query(query, [username, password, companyName, url], (err, results) => { // Include URL in the parameters
-    if (err) return res.status(500).json({ message: 'Database error' });
+// app.post('/api/admin/users', authenticateAdminToken, (req, res) => {
+//   const { username, password, companyName, url, photoLibraryLink } = req.body; // Destructure the URL from the request body
+//   const query = 'INSERT INTO users (username, password, company_name, link, photo_library_link ) VALUES (?, ?, ?, ?, ?)'; // Include URL in the query
+//   db.query(query, [username, password, companyName, url, photoLibraryLink], (err, results) => { // Include URL in the parameters
+//     if (err) return res.status(500).json({ message: 'Database error' });
+//     res.json({ message: 'User added successfully', userId: results.insertId });
+//   });
+// });
+
+app.post('/api/admin/users', authenticateAdminToken, upload.single('photo'), (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ message: 'Unauthorized admin' });
+  }
+
+  const { username, password, companyName, url, photoLibraryLink } = req.body;
+  const file = req.file;
+
+  // Construct photo URL (adjust host/port if needed)
+  const photoUrl = file ? `${req.protocol}://${req.get('host')}/uploads/${file.filename}` : null;
+
+  const query = `
+    INSERT INTO users (username, password, company_name, link, photo_library_link, logo_link)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `;
+
+  db.query(query, [username, password, companyName, url, photoLibraryLink, photoUrl], (err, results) => {
+    if (err) return res.status(500).json({ message: 'Database error', error: err });
     res.json({ message: 'User added successfully', userId: results.insertId });
+  });
+});
+
+// POST: Add Calendly Link for Admin
+app.post('/api/admin/calendly-link', authenticateAdminToken, (req, res) => {
+  const adminId = req.admin.id;  // The admin's ID from the decoded token
+  const { calendlyLink } = req.body;
+
+  if (!calendlyLink) {
+    return res.status(400).json({ message: 'Calendly link is required.' });
+  }
+
+  const query = 'INSERT INTO admin_calendly_link (admin_id, calendly_link) VALUES (?, ?)';
+  db.query(query, [adminId, calendlyLink], (err, result) => {
+    if (err) {
+      return res.status(500).json({ message: 'Database error' });
+    }
+
+    res.status(201).json({ message: 'Calendly link added successfully!' });
   });
 });
 
@@ -452,6 +648,20 @@ app.get('/api/admin/images', authenticateToken, (req, res) => {
       return res.status(500).json({ message: 'Database error' });
     }
     res.json(results);
+  });
+});
+
+
+// Upload image endpoint
+app.post('/api/upload', authenticateToken, (req, res) => {
+  const { imageUrl } = req.body; // Receive the image URL from the request body
+  const userId = req.user.id;
+
+  const query = 'INSERT INTO user_images (user_id, image_url) VALUES (?, ?)';
+  db.query(query, [userId, imageUrl], (err, results) => {
+    if (err) return res.status(500).json({ message: 'Database error' });
+
+    res.json({ message: 'Image link saved successfully!', imageUrl });
   });
 });
 

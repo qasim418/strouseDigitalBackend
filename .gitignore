@@ -53,3 +53,8 @@ ehthumbs.db
 
 # Linux system files
 *~
+
+
+# image folders
+images/
+uploads/

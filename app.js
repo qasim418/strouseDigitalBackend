@@ -566,21 +566,58 @@ app.post('/api/admin/users', authenticateAdminToken, upload.single('photo'), (re
 });
 
 // POST: Add Calendly Link for Admin
+// app.post('/api/admin/calendly-link', authenticateAdminToken, (req, res) => {
+//   const adminId = req.admin.id;  // The admin's ID from the decoded token
+//   const { calendlyLink } = req.body;
+
+//   if (!calendlyLink) {
+//     return res.status(400).json({ message: 'Calendly link is required.' });
+//   }
+
+//   const query = 'INSERT INTO admin_calendly_link (admin_id, calendly_link) VALUES (?, ?)';
+//   db.query(query, [adminId, calendlyLink], (err, result) => {
+//     if (err) {
+//       return res.status(500).json({ message: 'Database error' });
+//     }
+
+//     res.status(201).json({ message: 'Calendly link added successfully!' });
+//   });
+// });
+
 app.post('/api/admin/calendly-link', authenticateAdminToken, (req, res) => {
-  const adminId = req.admin.id;  // The admin's ID from the decoded token
+  const adminId = req.admin.id;
   const { calendlyLink } = req.body;
 
   if (!calendlyLink) {
     return res.status(400).json({ message: 'Calendly link is required.' });
   }
 
-  const query = 'INSERT INTO admin_calendly_link (admin_id, calendly_link) VALUES (?, ?)';
-  db.query(query, [adminId, calendlyLink], (err, result) => {
-    if (err) {
-      return res.status(500).json({ message: 'Database error' });
+  // First, check if a link already exists for this admin
+  const checkQuery = 'SELECT * FROM admin_calendly_link WHERE admin_id = ?';
+  db.query(checkQuery, [adminId], (checkErr, results) => {
+    if (checkErr) {
+      return res.status(500).json({ message: 'Database error', error: checkErr });
     }
 
-    res.status(201).json({ message: 'Calendly link added successfully!' });
+    if (results.length > 0) {
+      // Link exists → update it
+      const updateQuery = 'UPDATE admin_calendly_link SET calendly_link = ? WHERE admin_id = ?';
+      db.query(updateQuery, [calendlyLink, adminId], (updateErr) => {
+        if (updateErr) {
+          return res.status(500).json({ message: 'Database update error', error: updateErr });
+        }
+        res.json({ message: 'Calendly link updated successfully!' });
+      });
+    } else {
+      // Link does not exist → insert new
+      const insertQuery = 'INSERT INTO admin_calendly_link (admin_id, calendly_link) VALUES (?, ?)';
+      db.query(insertQuery, [adminId, calendlyLink], (insertErr) => {
+        if (insertErr) {
+          return res.status(500).json({ message: 'Database insert error', error: insertErr });
+        }
+        res.status(201).json({ message: 'Calendly link added successfully!' });
+      });
+    }
   });
 });
 
